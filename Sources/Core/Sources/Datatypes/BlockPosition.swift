@@ -48,7 +48,8 @@ public struct BlockPosition {
     return Vec3f(
       Float(x),
       Float(y),
-      Float(z))
+      Float(z)
+    )
   }
 
   /// This position as a vector of doubles.
@@ -56,7 +57,8 @@ public struct BlockPosition {
     return Vec3d(
       Double(x),
       Double(y),
-      Double(z))
+      Double(z)
+    )
   }
 
   /// This position as a vector of ints.

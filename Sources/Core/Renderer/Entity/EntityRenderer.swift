@@ -38,6 +38,9 @@ public struct EntityRenderer: Renderer {
 
   private var profiler: Profiler<RenderingMeasurement>
 
+  /// Should get updated each frame via `setVisibleChunks`.
+  private var visibleChunks: Set<ChunkPosition> = []
+
   /// Creates a new entity renderer.
   public init(
     client: Client,
@@ -154,7 +157,7 @@ public struct EntityRenderer: Renderer {
       let cameraChunk = camera.entityPosition.chunk
 
       // Create uniforms for each entity
-      profiler.push(.createUniforms)
+      profiler.push(.createRegularEntityMeshes)
       for (entity, position, rotation, hitbox, kindId) in entities.entityAndComponents {
         // Don't render entities that are outside of the render distance
         let chunkPosition = position.chunk
@@ -171,34 +174,53 @@ public struct EntityRenderer: Renderer {
           kindIdentifier = Identifier(name: "dragon")
         }
 
-        var translucentBlockElement = SortableMeshElement()
-        EntityMeshBuilder(
+        buildEntityMesh(
           entity: entity,
-          entityKind: kindIdentifier,
+          entityKindIdentifier: kindIdentifier,
           position: Vec3f(position.smoothVector),
           pitch: rotation.smoothPitch,
           yaw: rotation.smoothYaw,
-          entityModelPalette: entityModelPalette,
-          itemModelPalette: itemModelPalette,
-          blockModelPalette: blockModelPalette,
-          entityTexturePalette: entityTexturePalette.palette,
-          blockTexturePalette: blockTexturePalette.palette,
-          hitbox: hitbox.aabb(at: position.smoothVector)
-        ).build(
+          hitbox: hitbox.aabb(at: position.smoothVector),
           into: &geometry,
           blockGeometry: &blockGeometry,
-          translucentBlockGeometry: &translucentBlockElement
+          translucentBlockGeometry: &translucentBlockGeometry
         )
-        translucentBlockGeometry.add(translucentBlockElement)
+      }
+      profiler.pop()
+
+      profiler.push(.createBlockEntityMeshes)
+      for chunkPosition in visibleChunks {
+        guard let chunk = client.game.world.chunk(at: chunkPosition) else {
+          continue
+        }
+
+        for blockEntity in chunk.getBlockEntities() {
+          let position = blockEntity.position.floatVector + Vec3f(0.5, 0, 0.5)
+
+          let block = chunk.getBlock(at: blockEntity.position.relativeToChunk)
+          let direction = block.stateProperties.facing ?? .south
+
+          buildEntityMesh(
+            entity: nil,
+            entityKindIdentifier: blockEntity.identifier,
+            position: position,
+            pitch: 0,
+            yaw: Self.blockEntityYaw(toFace: direction),
+            hitbox: AxisAlignedBoundingBox(position: .zero, size: Vec3d(1, 1, 1)),
+            into: &geometry,
+            blockGeometry: &blockGeometry,
+            translucentBlockGeometry: &translucentBlockGeometry
+          )
+        }
       }
       profiler.pop()
     }
 
+    profiler.push(.encodeEntities)
     if !geometry.isEmpty {
       encoder.setRenderPipelineState(renderPipelineState)
       encoder.setFragmentTexture(entityTexturePalette.arrayTexture, index: 0)
 
-      // TODO: Update profiler measurements
       var mesh = Mesh<EntityVertex, Void>(geometry, uniforms: ())
       try mesh.render(into: encoder, with: device, commandQueue: commandQueue)
     }
@@ -223,6 +245,58 @@ public struct EntityRenderer: Renderer {
         )
       }
     }
+    profiler.pop()
+  }
+
+  private func buildEntityMesh(
+    entity: Entity? = nil,
+    entityKindIdentifier: Identifier,
+    position: Vec3f,
+    pitch: Float,
+    yaw: Float,
+    hitbox: AxisAlignedBoundingBox,
+    into geometry: inout Geometry<EntityVertex>,
+    blockGeometry: inout Geometry<BlockVertex>,
+    translucentBlockGeometry: inout SortableMesh
+  ) {
+    var translucentBlockElement = SortableMeshElement()
+    EntityMeshBuilder(
+      entity: entity,
+      entityKind: entityKindIdentifier,
+      position: position,
+      pitch: pitch,
+      yaw: yaw,
+      entityModelPalette: entityModelPalette,
+      itemModelPalette: itemModelPalette,
+      blockModelPalette: blockModelPalette,
+      entityTexturePalette: entityTexturePalette.palette,
+      blockTexturePalette: blockTexturePalette.palette,
+      hitbox: hitbox
+    ).build(
+      into: &geometry,
+      blockGeometry: &blockGeometry,
+      translucentBlockGeometry: &translucentBlockElement
+    )
+    translucentBlockGeometry.add(translucentBlockElement)
+  }
+
+  /// Computes the yaw required for a block entity to face a given direction.
+  private static func blockEntityYaw(toFace direction: Direction) -> Float {
+    switch direction {
+      case .south, .up, .down:
+        return 0
+      case .west:
+        return .pi / 2
+      case .north:
+        return .pi
+      case .east:
+        return -.pi / 2
+    }
+  }
+
+  /// Sets the chunks that block entities should be rendered from.
+  public mutating func setVisibleChunks(_ visibleChunks: Set<ChunkPosition>) {
+    self.visibleChunks = visibleChunks
   }
 
   /// Creates a coloured and shaded cube to be rendered using instancing as entities' hitboxes.

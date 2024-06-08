@@ -293,7 +293,9 @@ public final class WorldRenderer: Renderer {
 
     // Render transparent and opaque geometry
     profiler.push(.encodeOpaque)
-    try worldMesh.mutateVisibleMeshes { _, mesh in
+    var visibleChunks: Set<ChunkPosition> = []
+    try worldMesh.mutateVisibleMeshes { position, mesh in
+      visibleChunks.insert(position.chunk)
       try mesh.renderTransparentAndOpaque(
         renderEncoder: encoder,
         device: device,
@@ -421,6 +423,7 @@ public final class WorldRenderer: Renderer {
 
     // Entities are rendered before translucent geometry for correct alpha blending behaviour.
     profiler.push(.entities)
+    entityRenderer.setVisibleChunks(visibleChunks)
     try entityRenderer.render(
       view: view,
       encoder: encoder,
