@@ -13,7 +13,9 @@ public struct EntityMeshBuilder {
     Identifier(name: "chest"): Identifier(name: "entity/chest/normal"),
   ]
 
-  public let entity: Entity
+  /// Used to get extra metadata for rendering item entities and the Ender Dragon. Not required if just
+  /// rendering an entity for things such as block entity items.
+  public let entity: Entity?
   public let entityKind: Identifier
   public let position: Vec3f
   public let pitch: Float
@@ -21,8 +23,8 @@ public struct EntityMeshBuilder {
   public let entityModelPalette: EntityModelPalette
   public let itemModelPalette: ItemModelPalette
   public let blockModelPalette: BlockModelPalette
-  public let entityTexturePalette: MetalTexturePalette
-  public let blockTexturePalette: MetalTexturePalette
+  public let entityTexturePalette: TexturePalette
+  public let blockTexturePalette: TexturePalette
   public let hitbox: AxisAlignedBoundingBox
 
   static let colors: [Vec3f] = [
@@ -41,11 +43,11 @@ public struct EntityMeshBuilder {
   func build(
     into geometry: inout Geometry<EntityVertex>,
     blockGeometry: inout Geometry<BlockVertex>,
-    translucentBlockGeometry: inout SortableMesh
+    translucentBlockGeometry: inout SortableMeshElement
   ) {
     if let model = entityModelPalette.models[entityKind] {
       buildModel(model, into: &geometry)
-    } else if let itemMetadata = entity.get(component: EntityMetadata.self)?.itemMetadata,
+    } else if let itemMetadata = entity?.get(component: EntityMetadata.self)?.itemMetadata,
       let itemStack = itemMetadata.slot.stack,
       let itemModel = itemModelPalette.model(for: itemStack.itemId)
     {
@@ -93,6 +95,7 @@ public struct EntityMeshBuilder {
             neighbourLightLevels[direction] = LightLevel(sky: 15, block: 0)
           }
 
+          // TODO: Try using the transformation code from the GUIRenderer and see if that cleans things up a bit.
           let transformation =
             MatrixUtil.translationMatrix(Vec3f(-0.5, 0, -0.5))
             * bob
@@ -108,11 +111,9 @@ public struct EntityMeshBuilder {
             lightLevel: LightLevel(sky: 15, block: 0),
             neighbourLightLevels: [:],
             tintColor: Vec3f(1, 1, 1),
-            blockTexturePalette: blockTexturePalette.palette
+            blockTexturePalette: blockTexturePalette
           )
-          var translucentElement = SortableMeshElement()
-          builder.build(into: &blockGeometry, translucentGeometry: &translucentElement)
-          translucentBlockGeometry.add(translucentElement)
+          builder.build(into: &blockGeometry, translucentGeometry: &translucentBlockGeometry)
         case .layered:
           buildAABB(hitbox, into: &geometry)
         case .empty:
@@ -122,7 +123,7 @@ public struct EntityMeshBuilder {
       buildAABB(hitbox, into: &geometry)
     }
 
-    if let dragonParts = entity.get(component: EnderDragonParts.self) {
+    if let dragonParts = entity?.get(component: EnderDragonParts.self) {
       for part in dragonParts.parts {
         let aabb = part.aabb(withParentPosition: Vec3d(position))
         buildAABB(aabb, into: &geometry)
@@ -325,8 +326,8 @@ public struct EntityMeshBuilder {
       }
 
       let textureSize = Vec2f(
-        Float(entityTexturePalette.palette.width),
-        Float(entityTexturePalette.palette.height)
+        Float(entityTexturePalette.width),
+        Float(entityTexturePalette.height)
       )
       let uvs = [
         uvOrigin,

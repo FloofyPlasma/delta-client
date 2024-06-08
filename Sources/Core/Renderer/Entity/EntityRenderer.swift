@@ -171,7 +171,8 @@ public struct EntityRenderer: Renderer {
           kindIdentifier = Identifier(name: "dragon")
         }
 
-        let builder = EntityMeshBuilder(
+        var translucentBlockElement = SortableMeshElement()
+        EntityMeshBuilder(
           entity: entity,
           entityKind: kindIdentifier,
           position: Vec3f(position.smoothVector),
@@ -180,15 +181,15 @@ public struct EntityRenderer: Renderer {
           entityModelPalette: entityModelPalette,
           itemModelPalette: itemModelPalette,
           blockModelPalette: blockModelPalette,
-          entityTexturePalette: entityTexturePalette,
-          blockTexturePalette: blockTexturePalette,
+          entityTexturePalette: entityTexturePalette.palette,
+          blockTexturePalette: blockTexturePalette.palette,
           hitbox: hitbox.aabb(at: position.smoothVector)
-        )
-        builder.build(
+        ).build(
           into: &geometry,
           blockGeometry: &blockGeometry,
-          translucentBlockGeometry: &translucentBlockGeometry
+          translucentBlockGeometry: &translucentBlockElement
         )
+        translucentBlockGeometry.add(translucentBlockElement)
       }
       profiler.pop()
     }

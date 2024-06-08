@@ -24,7 +24,11 @@ struct JSONModelTransform: Codable {
     if let rotation = self.rotation {
       var rotationVector = try MathUtil.vectorFloat3(from: rotation)
       rotationVector = MathUtil.radians(from: rotationVector)
-      matrix *= MatrixUtil.rotationMatrix(rotationVector)
+      // matrix *= MatrixUtil.rotationMatrix(rotationVector)
+      matrix *=
+        MatrixUtil.rotationMatrix(z: rotationVector.z)
+        * MatrixUtil.rotationMatrix(y: rotationVector.y)
+        * MatrixUtil.rotationMatrix(x: rotationVector.x)
     }
 
     if let scale = self.scale {

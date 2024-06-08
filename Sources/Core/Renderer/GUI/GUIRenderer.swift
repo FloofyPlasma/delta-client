@@ -29,6 +29,9 @@ public final class GUIRenderer: Renderer {
   var blockArrayTexture: MTLTexture
   var blockModelPalette: BlockModelPalette
   var blockTexturePalette: TexturePalette
+  var entityArrayTexture: MTLTexture
+  var entityTexturePalette: TexturePalette
+  var entityModelPalette: EntityModelPalette
 
   var cache: [GUIElementMesh] = []
 
@@ -82,6 +85,16 @@ public final class GUIRenderer: Renderer {
     )
     blockArrayTexture.label = "blockArrayTexture"
     blockModelPalette = resources.blockModelPalette
+
+    entityTexturePalette = resources.entityTexturePalette
+    entityArrayTexture = try MetalTexturePalette.createArrayTexture(
+      for: resources.entityTexturePalette,
+      device: device,
+      commandQueue: commandQueue,
+      includeAnimations: false
+    )
+    entityArrayTexture.label = "entityArrayTexture"
+    entityModelPalette = resources.entityModelPalette
 
     // Create uniforms buffer
     uniformsBuffer = try MetalUtil.makeBuffer(
@@ -235,6 +248,8 @@ public final class GUIRenderer: Renderer {
           return []
         }
 
+        // TODO: Use this assumption to just lift all the display transforms when loading the
+        //   block model palette.
         // Get the block's transformation assuming that each block model part has the same
         // associated gui transformation (I don't see why this wouldn't always be true).
         var transformation: Mat4x4f
@@ -285,7 +300,64 @@ public final class GUIRenderer: Renderer {
         )
         mesh.position = [0, 0]
         return [mesh]
-      case .empty, .entity:
+      case let .entity(identifier, transforms):
+        var entityIdentifier = identifier
+        entityIdentifier.name = entityIdentifier.name.replacingOccurrences(of: "item/", with: "")
+
+        // Dummy meshes, we don't handle rendering inventory entities which themselves
+        // contain block item entities cause that doesn't happen (famous last words...)
+        var blockGeometry = Geometry<BlockVertex>()
+        var translucentBlockGeometry = SortableMeshElement()
+
+        var geometry = Geometry<EntityVertex>()
+        EntityMeshBuilder(
+          entity: nil,
+          entityKind: entityIdentifier,
+          position: .zero,
+          pitch: 0,
+          yaw: 0,
+          entityModelPalette: entityModelPalette,
+          itemModelPalette: itemModelPalette,
+          blockModelPalette: blockModelPalette,
+          entityTexturePalette: entityTexturePalette,
+          blockTexturePalette: blockTexturePalette,
+          hitbox: AxisAlignedBoundingBox(position: .zero, size: Vec3d(1, 1, 1))
+        ).build(
+          into: &geometry,
+          blockGeometry: &blockGeometry,
+          translucentBlockGeometry: &translucentBlockGeometry
+        )
+
+        let transformation: Mat4x4f =
+          MatrixUtil.translationMatrix(Vec3f(0, -0.5, 0))
+          * MatrixUtil.rotationMatrix(y: .pi / 2)
+          * transforms.gui
+          * MatrixUtil.scalingMatrix(Vec3f(-1, -1, 1))
+          * MatrixUtil.scalingMatrix(16)
+          * MatrixUtil.translationMatrix([8, 8, 0])
+
+        var vertices: [GUIVertex] = []
+        vertices.reserveCapacity(geometry.vertices.count)
+        for vertex in geometry.vertices {
+          let position = (Vec4f(vertex.x, vertex.y, vertex.z, 1) * transformation).xyz
+          vertices.append(
+            GUIVertex(
+              position: [position.x, position.y],
+              uv: [vertex.u, vertex.v],
+              tint: [vertex.r, vertex.g, vertex.b, 1],
+              textureIndex: vertex.textureIndex
+            )
+          )
+        }
+
+        var mesh = GUIElementMesh(
+          size: [16, 16],
+          arrayTexture: entityArrayTexture,
+          vertices: .flatArray(vertices)
+        )
+        mesh.position = [0, 0]
+        return [mesh]
+      case .empty:
         return []
     }
   }
