@@ -321,7 +321,8 @@ public final class GUIRenderer: Renderer {
           blockModelPalette: blockModelPalette,
           entityTexturePalette: entityTexturePalette,
           blockTexturePalette: blockTexturePalette,
-          hitbox: AxisAlignedBoundingBox(position: .zero, size: Vec3d(1, 1, 1))
+          hitbox: AxisAlignedBoundingBox(position: .zero, size: Vec3d(1, 1, 1)),
+          lightLevel: .default  // Doesn't matter cause the GUI doesn't use light levels
         ).build(
           into: &geometry,
           blockGeometry: &blockGeometry,

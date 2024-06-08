@@ -26,6 +26,7 @@ public struct EntityMeshBuilder {
   public let entityTexturePalette: TexturePalette
   public let blockTexturePalette: TexturePalette
   public let hitbox: AxisAlignedBoundingBox
+  public let lightLevel: LightLevel
 
   static let colors: [Vec3f] = [
     [1, 0, 0],
@@ -47,10 +48,20 @@ public struct EntityMeshBuilder {
   ) {
     if let model = entityModelPalette.models[entityKind] {
       buildModel(model, into: &geometry)
-    } else if let itemMetadata = entity?.get(component: EntityMetadata.self)?.itemMetadata,
-      let itemStack = itemMetadata.slot.stack,
-      let itemModel = itemModelPalette.model(for: itemStack.itemId)
-    {
+    } else if let itemMetadata = entity?.get(component: EntityMetadata.self)?.itemMetadata {
+      guard let itemStack = itemMetadata.slot.stack else {
+        // If there's no stack, then we're still waiting for the server to send
+        // the item's metadata so don't render anything yet (to avoid seeing the
+        // 'missing entity' hitbox for a split second whenever a new item entity
+        // spawns in).
+        return
+      }
+
+      guard let itemModel = itemModelPalette.model(for: itemStack.itemId) else {
+        buildAABB(hitbox, into: &geometry)
+        return
+      }
+
       // TODO: Figure out why these bobbing constants and hardcoded translations are so weird
       //   (they're even still slightly off vanilla, there must be a different order of transformations
       //   that makes these numbers nice or something).
@@ -89,10 +100,9 @@ public struct EntityMeshBuilder {
             return
           }
 
-          // TODO: Don't just use dummy lighting
           var neighbourLightLevels: [Direction: LightLevel] = [:]
           for direction in Direction.allDirections {
-            neighbourLightLevels[direction] = LightLevel(sky: 15, block: 0)
+            neighbourLightLevels[direction] = lightLevel
           }
 
           // TODO: Try using the transformation code from the GUIRenderer and see if that cleans things up a bit.
@@ -103,13 +113,14 @@ public struct EntityMeshBuilder {
             * MatrixUtil.translationMatrix(Vec3f(0, 7.0 / 32.0, 0))
             * MatrixUtil.rotationMatrix(y: yaw + .pi)
             * MatrixUtil.translationMatrix(position)
+
           let builder = BlockMeshBuilder(
             model: blockModel,
             position: .zero,
             modelToWorld: transformation,
             culledFaces: [],
-            lightLevel: LightLevel(sky: 15, block: 0),
-            neighbourLightLevels: [:],
+            lightLevel: lightLevel,
+            neighbourLightLevels: neighbourLightLevels,
             tintColor: Vec3f(1, 1, 1),
             blockTexturePalette: blockTexturePalette
           )
@@ -154,6 +165,8 @@ public struct EntityMeshBuilder {
           b: color.z,
           u: 0,
           v: 0,
+          skyLightLevel: UInt8(lightLevel.sky),
+          blockLightLevel: UInt8(lightLevel.block),
           textureIndex: nil
         )
         geometry.vertices.append(vertex)
@@ -355,6 +368,8 @@ public struct EntityMeshBuilder {
           b: textureIndex == nil ? color.z : 1,
           u: uv.x,
           v: uv.y,
+          skyLightLevel: UInt8(lightLevel.sky),
+          blockLightLevel: UInt8(lightLevel.block),
           textureIndex: textureIndex.map(UInt16.init)
         )
         geometry.vertices.append(vertex)

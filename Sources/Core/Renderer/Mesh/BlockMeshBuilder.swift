@@ -67,7 +67,7 @@ struct BlockMeshBuilder {
       }
 
       let faceLightLevel = LightLevel.max(
-        neighbourLightLevels[face.actualDirection] ?? LightLevel(),
+        neighbourLightLevels[face.actualDirection] ?? .default,
         lightLevel
       )
 

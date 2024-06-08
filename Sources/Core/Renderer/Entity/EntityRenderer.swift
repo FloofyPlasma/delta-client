@@ -15,12 +15,6 @@ public struct EntityRenderer: Renderer {
   private var blockRenderPipelineState: MTLRenderPipelineState
   /// The buffer containing the uniforms for all rendered entities.
   private var instanceUniformsBuffer: MTLBuffer?
-  /// The buffer containing the hit box vertices. They form a basic cube and instanced rendering is used to render the cube once for each entity.
-  private var vertexBuffer: MTLBuffer
-  /// The buffer containing the index windings for the template hit box (see ``vertexBuffer``.
-  private var indexBuffer: MTLBuffer
-  /// The number of indices in ``indexBuffer``.
-  private var indexCount: Int
 
   private var entityTexturePalette: MetalTexturePalette
   private var blockTexturePalette: MetalTexturePalette
@@ -81,26 +75,6 @@ public struct EntityRenderer: Renderer {
       vertexFunction: blockVertexFunction,
       fragmentFunction: blockFragmentFunction,
       blendingEnabled: true
-    )
-
-    // Create hitbox geometry (hitboxes are rendered using instancing)
-    var geometry = Self.createHitBoxGeometry(color: Self.hitBoxColor)
-    indexCount = geometry.indices.count
-
-    vertexBuffer = try MetalUtil.makeBuffer(
-      device,
-      bytes: &geometry.vertices,
-      length: geometry.vertices.count * MemoryLayout<EntityVertex>.stride,
-      options: .storageModeShared,
-      label: "entityHitBoxVertices"
-    )
-
-    indexBuffer = try MetalUtil.makeBuffer(
-      device,
-      bytes: &geometry.indices,
-      length: geometry.indices.count * MemoryLayout<UInt32>.stride,
-      options: .storageModeShared,
-      label: "entityHitBoxIndices"
     )
 
     entityTexturePalette = try MetalTexturePalette(
@@ -174,6 +148,7 @@ public struct EntityRenderer: Renderer {
           kindIdentifier = Identifier(name: "dragon")
         }
 
+        let lightLevel = client.game.world.getLightLevel(at: position.block)
         buildEntityMesh(
           entity: entity,
           entityKindIdentifier: kindIdentifier,
@@ -181,6 +156,7 @@ public struct EntityRenderer: Renderer {
           pitch: rotation.smoothPitch,
           yaw: rotation.smoothYaw,
           hitbox: hitbox.aabb(at: position.smoothVector),
+          lightLevel: lightLevel,
           into: &geometry,
           blockGeometry: &blockGeometry,
           translucentBlockGeometry: &translucentBlockGeometry
@@ -200,6 +176,7 @@ public struct EntityRenderer: Renderer {
           let block = chunk.getBlock(at: blockEntity.position.relativeToChunk)
           let direction = block.stateProperties.facing ?? .south
 
+          let lightLevel = client.game.world.getLightLevel(at: blockEntity.position)
           buildEntityMesh(
             entity: nil,
             entityKindIdentifier: blockEntity.identifier,
@@ -207,6 +184,7 @@ public struct EntityRenderer: Renderer {
             pitch: 0,
             yaw: Self.blockEntityYaw(toFace: direction),
             hitbox: AxisAlignedBoundingBox(position: .zero, size: Vec3d(1, 1, 1)),
+            lightLevel: lightLevel,
             into: &geometry,
             blockGeometry: &blockGeometry,
             translucentBlockGeometry: &translucentBlockGeometry
@@ -255,6 +233,7 @@ public struct EntityRenderer: Renderer {
     pitch: Float,
     yaw: Float,
     hitbox: AxisAlignedBoundingBox,
+    lightLevel: LightLevel,
     into geometry: inout Geometry<EntityVertex>,
     blockGeometry: inout Geometry<BlockVertex>,
     translucentBlockGeometry: inout SortableMesh
@@ -271,7 +250,8 @@ public struct EntityRenderer: Renderer {
       blockModelPalette: blockModelPalette,
       entityTexturePalette: entityTexturePalette.palette,
       blockTexturePalette: blockTexturePalette.palette,
-      hitbox: hitbox
+      hitbox: hitbox,
+      lightLevel: lightLevel
     ).build(
       into: &geometry,
       blockGeometry: &blockGeometry,
@@ -297,38 +277,5 @@ public struct EntityRenderer: Renderer {
   /// Sets the chunks that block entities should be rendered from.
   public mutating func setVisibleChunks(_ visibleChunks: Set<ChunkPosition>) {
     self.visibleChunks = visibleChunks
-  }
-
-  /// Creates a coloured and shaded cube to be rendered using instancing as entities' hitboxes.
-  private static func createHitBoxGeometry(color: DeltaCore.RGBColor) -> Geometry<EntityVertex> {
-    var vertices: [EntityVertex] = []
-    var indices: [UInt32] = []
-
-    for direction in Direction.allDirections {
-      let faceVertices = CubeGeometry.faceVertices[direction.rawValue]
-      for position in faceVertices {
-        let color = color.floatVector * CubeGeometry.shades[direction.rawValue]
-        vertices.append(
-          EntityVertex(
-            x: position.x,
-            y: position.y,
-            z: position.z,
-            r: color.x,
-            g: color.y,
-            b: color.z,
-            u: 0,
-            v: 0,
-            textureIndex: nil
-          )
-        )
-      }
-
-      let offset = UInt32(indices.count / 6 * 4)
-      for value in CubeGeometry.faceWinding {
-        indices.append(value + offset)
-      }
-    }
-
-    return Geometry(vertices: vertices, indices: indices)
   }
 }
